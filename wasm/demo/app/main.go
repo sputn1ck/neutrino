@@ -23,10 +23,12 @@ var (
 	svc        *neutrino.ChainService
 	svcStarted bool
 	svcProxy   string
+	svcDNS     string
+	svcNetwork string
 )
 
 func main() {
-	neutrino.DisableDNSSeed = true
+	neutrino.DisableDNSSeed = false
 	neutrino.TargetOutbound = 3
 
 	api := map[string]any{
@@ -49,17 +51,30 @@ func initStorage(_ js.Value, args []js.Value) any {
 	if len(args) > 0 && strings.TrimSpace(args[0].String()) != "" {
 		proxy = normalizeProxyURL(args[0].String())
 	}
+	dnsURL := defaultDNS()
+	if len(args) > 1 && strings.TrimSpace(args[1].String()) != "" {
+		dnsURL = strings.TrimSpace(args[1].String())
+	}
+	network := defaultNetwork()
+	if len(args) > 2 && strings.TrimSpace(args[2].String()) != "" {
+		network = normalizeNetwork(args[2].String())
+	}
 
 	go func() {
 		status("initializing storage")
-		if err := ensureService(proxy); err != nil {
+		if err := ensureService(proxy, dnsURL, network); err != nil {
 			status("storage init failed")
 			logf("storage init could not complete: %v", err)
 			return
 		}
+		if err := startService(); err != nil {
+			status("service start failed")
+			logf("chain service could not start: %v", err)
+			return
+		}
 
 		status("storage ready")
-		log("storage initialized")
+		log("storage initialized; DNS seed discovery is active")
 		logBestBlock()
 	}()
 
@@ -67,7 +82,7 @@ func initStorage(_ js.Value, args []js.Value) any {
 }
 
 func connect(_ js.Value, args []js.Value) any {
-	peer := "116.202.84.94:8333"
+	peer := ""
 	proxy := defaultProxy()
 	if len(args) > 0 && strings.TrimSpace(args[0].String()) != "" {
 		peer = strings.TrimSpace(args[0].String())
@@ -75,30 +90,40 @@ func connect(_ js.Value, args []js.Value) any {
 	if len(args) > 1 && strings.TrimSpace(args[1].String()) != "" {
 		proxy = normalizeProxyURL(args[1].String())
 	}
+	dnsURL := defaultDNS()
+	if len(args) > 2 && strings.TrimSpace(args[2].String()) != "" {
+		dnsURL = strings.TrimSpace(args[2].String())
+	}
+	network := defaultNetwork()
+	if len(args) > 3 && strings.TrimSpace(args[3].String()) != "" {
+		network = normalizeNetwork(args[3].String())
+	}
 
 	go func() {
 		status("connecting")
 		logf("requesting peer connection: %s", peer)
-		if isOnionTarget(peer) {
+		if wasmtransport.IsOnionTarget(peer) {
 			status("onion peer skipped")
 			log("onion peer skipped; browser demo only dials clearnet peers")
 			return
 		}
 
-		if err := ensureService(proxy); err != nil {
+		if err := ensureService(proxy, dnsURL, network); err != nil {
 			status("connect setup failed")
 			logf("connection setup could not complete: %v", err)
 			return
 		}
 
-		if !svcStarted {
-			if err := svc.Start(context.Background()); err != nil {
-				status("service start failed")
-				logf("chain service could not start: %v", err)
-				return
-			}
-			svcStarted = true
-			log("chain service started; discovery is active")
+		if err := startService(); err != nil {
+			status("service start failed")
+			logf("chain service could not start: %v", err)
+			return
+		}
+
+		if peer == "" {
+			status("DNS discovery active")
+			log("no explicit peer supplied; waiting for DNS seeded peers")
+			return
 		}
 
 		if err := svc.ConnectNode(peer, true); err != nil {
@@ -194,6 +219,8 @@ func stop(js.Value, []js.Value) any {
 		svc = nil
 		svcStarted = false
 		svcProxy = ""
+		svcDNS = ""
+		svcNetwork = ""
 		setPeerCount(0)
 		setPeerList("No connected peers.")
 	}()
@@ -201,15 +228,17 @@ func stop(js.Value, []js.Value) any {
 	return nil
 }
 
-func ensureService(proxy string) error {
+func ensureService(proxy, dnsURL, network string) error {
 	if svc != nil {
-		if svcProxy != proxy {
-			return fmt.Errorf("service already initialized with proxy %s", svcProxy)
+		if svcProxy != proxy || svcDNS != dnsURL || svcNetwork != network {
+			return fmt.Errorf("service already initialized with proxy=%s dns=%s network=%s",
+				svcProxy, svcDNS, svcNetwork)
 		}
 
 		return nil
 	}
 
+	params := paramsForNetwork(network)
 	cfg := neutrino.Config{
 		DataDir: "/",
 		SQLConfig: &sqldb.Config{
@@ -217,18 +246,13 @@ func ensureService(proxy string) error {
 			Sqlite: &sqldbv2.SqliteConfig{
 				BusyTimeout: 5 * time.Second,
 			},
-			SqliteFilename:      demoDBName(),
+			SqliteFilename:      demoDBName(network),
 			SkipLegacyMigration: true,
 		},
-		ChainParams: chaincfg.MainNetParams,
-		AddrResolver: func(addr string) (net.Addr, error) {
-			if isOnionTarget(addr) {
-				return nil, fmt.Errorf("onion peer skipped by browser demo")
-			}
-
-			return wasmtransport.NewAddr(addr), nil
-		},
-		Dialer: wasmtransport.NewProxyDialer(proxy),
+		ChainParams:  params,
+		NameResolver: loggingNameResolver(wasmtransport.NewDoHNameResolver(dnsURL)),
+		AddrResolver: wasmtransport.NewAddrResolver(&params),
+		Dialer:       wasmtransport.NewProxyDialer(proxy),
 	}
 
 	next, err := neutrino.NewChainService(cfg)
@@ -237,6 +261,23 @@ func ensureService(proxy string) error {
 	}
 	svc = next
 	svcProxy = proxy
+	svcDNS = dnsURL
+	svcNetwork = network
+	logf("chain service configured: network=%s proxy=%s dns=%s",
+		network, proxy, dnsURL)
+
+	return nil
+}
+
+func startService() error {
+	if svcStarted {
+		return nil
+	}
+	if err := svc.Start(context.Background()); err != nil {
+		return err
+	}
+	svcStarted = true
+	log("chain service started")
 
 	return nil
 }
@@ -319,24 +360,59 @@ func defaultProxy() string {
 	return "wss://konwss.tunn.dev/peer-proxy"
 }
 
-func demoDBName() string {
+func defaultDNS() string {
+	return wasmtransport.DefaultDoHEndpoint
+}
+
+func defaultNetwork() string {
+	return "signet"
+}
+
+func normalizeNetwork(network string) string {
+	switch strings.ToLower(strings.TrimSpace(network)) {
+	case "main", "mainnet", "bitcoin":
+		return "mainnet"
+	case "test", "testnet", "testnet3":
+		return "testnet"
+	case "signet", "sig":
+		return "signet"
+	default:
+		return defaultNetwork()
+	}
+}
+
+func paramsForNetwork(network string) chaincfg.Params {
+	switch normalizeNetwork(network) {
+	case "mainnet":
+		return chaincfg.MainNetParams
+	case "testnet":
+		return chaincfg.TestNet3Params
+	default:
+		return chaincfg.SigNetParams
+	}
+}
+
+func demoDBName(network string) string {
 	name := strings.TrimSpace(js.Global().Get("neutrinoDemoDBName").String())
 	if name == "" || name == "<undefined>" || name == "<null>" {
-		return "neutrino-wasm-demo.sqlite"
+		return fmt.Sprintf("neutrino-wasm-demo-%s.sqlite", network)
 	}
 
 	return name
 }
 
-func isOnionTarget(target string) bool {
-	host := strings.TrimSpace(target)
-	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-		host = parsedHost
-	} else if idx := strings.LastIndex(host, ":"); idx > 0 {
-		host = host[:idx]
-	}
+func loggingNameResolver(resolve func(string) ([]net.IP, error)) func(string) ([]net.IP, error) {
+	return func(host string) ([]net.IP, error) {
+		logf("DNS seed lookup: %s", host)
+		ips, err := resolve(host)
+		if err != nil {
+			logf("DNS seed lookup failed: %s: %v", host, err)
+			return nil, err
+		}
 
-	return strings.HasSuffix(strings.ToLower(strings.Trim(host, "[]")), ".onion")
+		logf("%d DNS seed address(es) found from %s", len(ips), host)
+		return ips, nil
+	}
 }
 
 func log(msg string) {

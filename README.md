@@ -145,3 +145,30 @@ are renamed to `*.bak`. The `walletdb` file is left in place; operators may
 delete it manually after confirming the SQL state. The migration is recorded
 exactly once in the `neutrino_migrations` tracking table at version 2; if the
 process crashes mid-import, the next start re-runs the import from scratch.
+
+### Browser WASM
+Browser WASM callers can use the SQL backend with the `wasmtransport` helpers
+to keep neutrino's normal peer discovery path intact:
+
+```go
+params := chaincfg.SigNetParams
+cs, err := neutrino.NewChainService(neutrino.Config{
+    DataDir:     "/",
+    ChainParams: params,
+    SQLConfig: &sqldb.Config{
+        Backend: sqldb.BackendSqlite,
+        Sqlite:  &sqldbv2.SqliteConfig{},
+    },
+    Dialer:       wasmtransport.NewProxyDialer("wss://example.com/peer-proxy"),
+    NameResolver: wasmtransport.NewDoHNameResolver(wasmtransport.DefaultDoHEndpoint),
+    AddrResolver: wasmtransport.NewAddrResolver(&params),
+})
+```
+
+The browser cannot open raw TCP sockets or perform native DNS queries, so the
+proxy dialer tunnels Bitcoin P2P bytes through WebSocket and the resolver uses
+DNS-over-HTTPS. Automatic peer discovery still uses `chaincfg` DNS seeds via
+the existing `connmgr.SeedFromDNS` path. When compact filters are required,
+`connmgr` queries service-bit-filtered seed names such as
+`x49.seed.signet.bitcoin.sprovoost.nl`, where `0x49` is
+`SFNodeNetwork | SFNodeWitness | SFNodeCF`.

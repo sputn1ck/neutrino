@@ -187,8 +187,19 @@
         <label for="proxy">WebSocket proxy</label>
         <input id="proxy" value="wss://konwss.tunn.dev/peer-proxy">
 
+        <label for="dns">DNS-over-HTTPS resolver</label>
+        <input id="dns" value="https://cloudflare-dns.com/dns-query">
+
+        <label for="network">Bitcoin network</label>
+        <select id="network">
+          <option value="signet" selected>signet</option>
+          <option value="testnet">testnet3</option>
+          <option value="mainnet">mainnet</option>
+        </select>
+
         <label for="peerSelect">Known compact-filter peer</label>
         <select id="peerSelect">
+          <option value="">DNS seed only</option>
           <option value="116.202.84.94:8333">116.202.84.94:8333</option>
           <option value="95.98.206.92:8333">95.98.206.92:8333</option>
           <option value="87.209.244.90:8333">87.209.244.90:8333</option>
@@ -197,7 +208,7 @@
         </select>
 
         <label for="peer">Peer target</label>
-        <input id="peer" value="116.202.84.94:8333">
+        <input id="peer" placeholder="optional host:port">
 
         <div class="buttons">
           <button id="initBtn">Init DB</button>
@@ -241,6 +252,8 @@
     const peer = document.getElementById('peer');
     const peerSelect = document.getElementById('peerSelect');
     const proxy = document.getElementById('proxy');
+    const dns = document.getElementById('dns');
+    const network = document.getElementById('network');
 
     window.neutrinoLog = (line) => {
       const stamp = new Date().toLocaleTimeString();
@@ -299,9 +312,9 @@
     peerSelect.addEventListener('change', () => {
       peer.value = peerSelect.value;
     });
-    document.getElementById('initBtn').onclick = () => window.neutrinoDemo.initStorage(proxy.value);
+    document.getElementById('initBtn').onclick = () => window.neutrinoDemo.initStorage(proxy.value, dns.value, network.value);
     document.getElementById('bestBtn').onclick = () => window.neutrinoDemo.bestBlock();
-    document.getElementById('connectBtn').onclick = () => window.neutrinoDemo.connect(peer.value, proxy.value);
+    document.getElementById('connectBtn').onclick = () => window.neutrinoDemo.connect(peer.value, proxy.value, dns.value, network.value);
     document.getElementById('filterBtn').onclick = () => window.neutrinoDemo.fetchTip();
     document.getElementById('peersBtn').onclick = () => window.neutrinoDemo.listPeers();
     document.getElementById('stopBtn').onclick = () => window.neutrinoDemo.stop();

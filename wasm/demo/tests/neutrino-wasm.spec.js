@@ -13,6 +13,8 @@ test('loads wasm demo and initializes neutrino storage', async ({ page }) => {
   await expect(page.locator('#peerCount')).toHaveText('0');
   await expect(page.locator('#storageMode')).toHaveText('opening');
 
+  await page.locator('#proxy').fill('ws://127.0.0.1:1/peer-proxy');
+  await page.locator('#dns').fill('http://127.0.0.1:1/dns-query');
   await page.locator('#initBtn').click();
   await expect(page.locator('#log')).toContainText('storage initialized', {
     timeout: 30000
@@ -28,7 +30,7 @@ test('loads wasm demo and initializes neutrino storage', async ({ page }) => {
   await expect(page.locator('#status')).toContainText('best block', {
     timeout: 30000
   });
-  await expect(page.locator('#log')).toContainText('hash=000000000019d6689c085ae165831e93');
+  await expect(page.locator('#log')).toContainText('best block height=0');
 
   await page.locator('#peersBtn').click();
   await expect(page.locator('#peerList')).toContainText('No connected peers.');
@@ -44,11 +46,14 @@ test('reuses initialized storage when connecting a peer', async ({ page }) => {
   await expect(page.locator('#status')).toHaveText('ready', { timeout: 30000 });
 
   await page.locator('#proxy').fill('ws://127.0.0.1:1/peer-proxy');
+  await page.locator('#dns').fill('http://127.0.0.1:1/dns-query');
+  await page.locator('#network').selectOption('mainnet');
   await page.locator('#initBtn').click();
   await expect(page.locator('#log')).toContainText('storage initialized', {
     timeout: 30000
   });
 
+  await page.locator('#peer').fill('116.202.84.94:8333');
   await page.locator('#connectBtn').click();
   await expect(page.locator('#log')).toContainText('chain service started', {
     timeout: 30000
@@ -69,6 +74,7 @@ test('skips onion peers before opening websocket proxy connections', async ({ pa
   await expect(page.locator('#status')).toHaveText('ready', { timeout: 30000 });
 
   await page.locator('#proxy').fill('ws://127.0.0.1:1/peer-proxy');
+  await page.locator('#dns').fill('http://127.0.0.1:1/dns-query');
   await page.locator('#peer').fill(
     'hswvbdrouzbzzusp6s7onc4xgpydluxnjlylsfgmws66y6c2hradgiid.onion:8333'
   );
