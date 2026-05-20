@@ -841,6 +841,10 @@ func (s *SQLFilterHeaderStore) WriteHeaders(hdrs ...FilterHeader) error {
 	ctx := context.Background()
 	return s.db.ExecTx(ctx, sqldbv2.WriteTxOpt(),
 		func(q sqldb.HeaderQueries) error {
+			if err := fillFilterHeaderMetadata(ctx, q, hdrs); err != nil {
+				return err
+			}
+
 			var (
 				tipHash   chainhash.Hash
 				tipHeight uint32
@@ -868,6 +872,63 @@ func (s *SQLFilterHeaderStore) WriteHeaders(hdrs ...FilterHeader) error {
 				},
 			)
 		}, sqldbv2.NoOpReset)
+}
+
+// fillFilterHeaderMetadata preserves the legacy flat-file WriteHeaders
+// contract: callers may pass a batch where only the final filter header has
+// the corresponding block height and hash populated. SQL stores every filter
+// header row keyed by height and block hash, so derive any missing metadata
+// from the already-persisted block headers inside the same transaction.
+func fillFilterHeaderMetadata(ctx context.Context, q sqldb.HeaderQueries,
+	hdrs []FilterHeader) error {
+
+	if len(hdrs) == 0 {
+		return nil
+	}
+
+	var zeroHash chainhash.Hash
+	needsMetadata := false
+	for _, hdr := range hdrs {
+		if hdr.HeaderHash == zeroHash {
+			needsMetadata = true
+			break
+		}
+	}
+	if !needsMetadata {
+		return nil
+	}
+
+	endHeight := hdrs[len(hdrs)-1].Height
+	if endHeight+1 < uint32(len(hdrs)) {
+		return fmt.Errorf("filter header batch of %d cannot end at height %d",
+			len(hdrs), endHeight)
+	}
+
+	startHeight := endHeight - uint32(len(hdrs)) + 1
+	rows, err := q.GetBlockHeaderRange(ctx, sqlc.GetBlockHeaderRangeParams{
+		StartHeight: int64(startHeight),
+		EndHeight:   int64(endHeight),
+	})
+	if err != nil {
+		return err
+	}
+	if len(rows) != len(hdrs) {
+		return fmt.Errorf("filter header batch %d-%d needs %d block "+
+			"headers, found %d", startHeight, endHeight, len(hdrs),
+			len(rows))
+	}
+
+	for i, row := range rows {
+		blockHeader, err := decodeBlockHeader(row.RawHeader)
+		if err != nil {
+			return err
+		}
+
+		hdrs[i].Height = uint32(row.Height)
+		hdrs[i].HeaderHash = blockHeader.BlockHash()
+	}
+
+	return nil
 }
 
 // RollbackLastBlock removes the most recent filter header and updates the

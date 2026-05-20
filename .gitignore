@@ -31,3 +31,18 @@ coverage.txt
 
 # go workspace
 go.work
+
+# Local toolchains for demo/test work.
+.tools/
+
+# Wasm demo generated artifacts.
+wasm/demo/node_modules/
+wasm/demo/playwright-report/
+wasm/demo/test-results/
+wasm/demo/static/main.wasm
+wasm/demo/static/wasm_exec.js
+wasm/demo/static/sqlite-bridge.js
+wasm/demo/static/sqlite-worker.js
+wasm/demo/static/sqlite3.js
+wasm/demo/static/sqlite3.wasm
+wasm/demo/static/sqlite3-opfs-async-proxy.js

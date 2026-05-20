@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "build:wasm": "mkdir -p static && GOCACHE=/tmp/go-build PATH=/usr/local/go/bin:$PATH GOOS=js GOARCH=wasm go build -o static/main.wasm ./app && cp $(PATH=/usr/local/go/bin:$PATH go env GOROOT)/lib/wasm/wasm_exec.js static/ && cp $(PATH=/usr/local/go/bin:$PATH go env GOPATH)/pkg/mod/github.com/sputn1ck/go-wasmsqlite@*/bridge/sqlite-bridge.js static/ && cp $(PATH=/usr/local/go/bin:$PATH go env GOPATH)/pkg/mod/github.com/sputn1ck/go-wasmsqlite@*/bridge/sqlite-worker.js static/ && cp $(PATH=/usr/local/go/bin:$PATH go env GOPATH)/pkg/mod/github.com/sputn1ck/go-wasmsqlite@*/assets/sqlite3.js static/ && cp $(PATH=/usr/local/go/bin:$PATH go env GOPATH)/pkg/mod/github.com/sputn1ck/go-wasmsqlite@*/assets/sqlite3.wasm static/ && cp $(PATH=/usr/local/go/bin:$PATH go env GOPATH)/pkg/mod/github.com/sputn1ck/go-wasmsqlite@*/assets/sqlite3-opfs-async-proxy.js static/",
+    "serve": "GOCACHE=/tmp/go-build PATH=/usr/local/go/bin:$PATH go run ./server -dir static -addr 127.0.0.1:8090",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0"
+  }
+}

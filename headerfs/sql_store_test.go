@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/require"
 
@@ -164,7 +165,7 @@ func TestSQLBlockHeaderFetchAncestors(t *testing.T) {
 	stop := chain[40].BlockHash()
 	headers, startHeight, err := store.FetchHeaderAncestors(10, &stop)
 	require.NoError(t, err)
-	require.Len(t, headers, 11)            // 10 ancestors + stop
+	require.Len(t, headers, 11) // 10 ancestors + stop
 	require.Equal(t, uint32(31), startHeight)
 	for i, h := range headers {
 		require.True(t, reflect.DeepEqual(*chain[31+i-1].BlockHeader,
@@ -207,6 +208,57 @@ func TestSQLFilterHeaderStoreOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(prev.Height), stamp.Height)
 	require.Equal(t, prevFilterHash[:], stamp.Hash[:])
+}
+
+// TestSQLFilterHeaderWriteDerivesBatchMetadata covers the blockmanager write
+// shape used by committed filter header checkpoint sync: the legacy flat-file
+// store only required the final filter header in the batch to carry the
+// matching block height/hash metadata. The SQL store persists every row, so it
+// must derive the missing metadata from the block_headers table.
+func TestSQLFilterHeaderWriteDerivesBatchMetadata(t *testing.T) {
+	t.Parallel()
+
+	backend := sqldb.NewTestBackend(t)
+	ctx := context.Background()
+
+	blockStore, err := NewSQLBlockHeaderStore(
+		ctx, backend.HeaderTxer, &chaincfg.SimNetParams,
+	)
+	require.NoError(t, err)
+
+	filterStore, err := NewSQLFilterHeaderStore(
+		ctx, backend.HeaderTxer, RegularFilter, &chaincfg.SimNetParams,
+		nil,
+	)
+	require.NoError(t, err)
+
+	const numHeaders = 10
+	blockHeaders := createTestBlockHeaderChain(numHeaders)
+	require.NoError(t, blockStore.WriteHeaders(blockHeaders...))
+
+	filterHeaders := createTestFilterHeaderChain(numHeaders)
+	for i := range filterHeaders[:len(filterHeaders)-1] {
+		filterHeaders[i].HeaderHash = chainhash.Hash{}
+		filterHeaders[i].Height = 0
+	}
+
+	last := len(filterHeaders) - 1
+	filterHeaders[last].HeaderHash = blockHeaders[last].BlockHash()
+
+	require.NoError(t, filterStore.WriteHeaders(filterHeaders...))
+
+	for i, filterHeader := range filterHeaders {
+		height := uint32(i + 1)
+		blockHash := blockHeaders[i].BlockHash()
+
+		got, err := filterStore.FetchHeaderByHeight(height)
+		require.NoError(t, err)
+		require.Equal(t, filterHeader.FilterHash, *got)
+
+		got, err = filterStore.FetchHeader(&blockHash)
+		require.NoError(t, err)
+		require.Equal(t, filterHeader.FilterHash, *got)
+	}
 }
 
 // TestSQLFilterHeaderAssertReset verifies that constructing the store with a
