@@ -318,7 +318,9 @@ func monitorSync(ctx context.Context) {
 					if !ok {
 						return
 					}
-					logf("block notification: %s", ntfn)
+					if ntfn.Height()%2000 == 0 {
+						logf("block notification: %s", ntfn)
+					}
 
 				case <-ctx.Done():
 					return
