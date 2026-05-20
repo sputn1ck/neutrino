@@ -16,6 +16,10 @@ import (
 // browser WebSocket proxy. The proxy URL receives target=<host:port>.
 func NewProxyDialer(proxyURL string) func(net.Addr) (net.Conn, error) {
 	return func(addr net.Addr) (net.Conn, error) {
+		if addr.Network() == "onion" || IsOnionTarget(addr.String()) {
+			return nil, fmt.Errorf("onion peer %s is not reachable from browser wasm", addr)
+		}
+
 		return dial(proxyURL, addr.String())
 	}
 }
