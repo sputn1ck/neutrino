@@ -6,7 +6,6 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c
-	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.2.3
 	github.com/btcsuite/btcwallet/walletdb v1.3.5
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
@@ -15,6 +14,7 @@ require (
 	github.com/lightninglabs/neutrino/cache v1.1.2
 	github.com/lightningnetwork/lnd/queue v1.0.1
 	github.com/lightningnetwork/lnd/sqldb/v2 v2.0.0-20260504151100-6fd5b7bb27d7
+	github.com/sputn1ck/go-wasmsqlite v0.0.0-20260520115614-9ea1167df60b
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/exp v0.0.0-20250811191247-51f88131bc50
 	pgregory.net/rapid v1.2.0
@@ -26,6 +26,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
+	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.0 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.1.0 // indirect
 	github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd // indirect
@@ -72,7 +73,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/sputn1ck/go-wasmsqlite v0.0.0-20260519122749-c15afa026757 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
