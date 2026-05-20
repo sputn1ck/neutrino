@@ -25,11 +25,12 @@ var (
 	svcProxy   string
 	svcDNS     string
 	svcNetwork string
+
+	syncMonitorCancel context.CancelFunc
 )
 
 func main() {
 	neutrino.DisableDNSSeed = false
-	neutrino.TargetOutbound = 3
 
 	api := map[string]any{
 		"initStorage": js.FuncOf(initStorage),
@@ -216,6 +217,7 @@ func stop(js.Value, []js.Value) any {
 			status("stopped")
 			log("chain service stopped")
 		}
+		stopSyncMonitor()
 		svc = nil
 		svcStarted = false
 		svcProxy = ""
@@ -278,8 +280,130 @@ func startService() error {
 	}
 	svcStarted = true
 	log("chain service started")
+	startSyncMonitor()
 
 	return nil
+}
+
+func startSyncMonitor() {
+	stopSyncMonitor()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	syncMonitorCancel = cancel
+
+	go monitorSync(ctx)
+}
+
+func stopSyncMonitor() {
+	if syncMonitorCancel != nil {
+		syncMonitorCancel()
+		syncMonitorCancel = nil
+	}
+}
+
+func monitorSync(ctx context.Context) {
+	logTips("sync initial state", true)
+
+	sub, err := (&neutrino.RescanChainSource{
+		ChainService: svc,
+	}).Subscribe(0)
+	if err != nil {
+		logf("block notification subscription unavailable: %v", err)
+	} else {
+		defer sub.Cancel()
+		go func() {
+			for {
+				select {
+				case ntfn, ok := <-sub.Notifications:
+					if !ok {
+						return
+					}
+					logf("block notification: %s", ntfn)
+
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	var lastHeaderHeight uint32
+	var lastFilterHeight uint32
+	var lastBestHeight int32 = -1
+	var lastPeerCount = -1
+	var initialized bool
+
+	for {
+		select {
+		case <-ticker.C:
+			headerHeight, filterHeight, bestHeight, peerCount, ok := syncState()
+			if !ok {
+				continue
+			}
+
+			if !initialized ||
+				headerHeight != lastHeaderHeight ||
+				filterHeight != lastFilterHeight ||
+				bestHeight != lastBestHeight ||
+				peerCount != lastPeerCount {
+
+				logf("sync progress: peers=%d block_headers=%d filter_headers=%d best_usable=%d",
+					peerCount, headerHeight, filterHeight, bestHeight)
+				lastHeaderHeight = headerHeight
+				lastFilterHeight = filterHeight
+				lastBestHeight = bestHeight
+				lastPeerCount = peerCount
+				initialized = true
+			}
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func logTips(prefix string, includePeers bool) {
+	headerHeight, filterHeight, bestHeight, peerCount, ok := syncState()
+	if !ok {
+		return
+	}
+
+	if includePeers {
+		logf("%s: peers=%d block_headers=%d filter_headers=%d best_usable=%d",
+			prefix, peerCount, headerHeight, filterHeight, bestHeight)
+		return
+	}
+
+	logf("%s: block_headers=%d filter_headers=%d best_usable=%d",
+		prefix, headerHeight, filterHeight, bestHeight)
+}
+
+func syncState() (uint32, uint32, int32, int, bool) {
+	if svc == nil {
+		return 0, 0, 0, 0, false
+	}
+
+	_, headerHeight, err := svc.BlockHeaders.ChainTip()
+	if err != nil {
+		logf("block header tip unavailable: %v", err)
+		return 0, 0, 0, 0, false
+	}
+
+	_, filterHeight, err := svc.RegFilterHeaders.ChainTip()
+	if err != nil {
+		logf("filter header tip unavailable: %v", err)
+		return 0, 0, 0, 0, false
+	}
+
+	bestHeight := int32(-1)
+	if stamp, err := svc.BestBlock(); err == nil {
+		bestHeight = stamp.Height
+	}
+
+	return headerHeight, filterHeight, bestHeight, len(svc.Peers()), true
 }
 
 func logBestBlock() {
