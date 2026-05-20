@@ -160,7 +160,10 @@ func isWasmStorageFallbackError(err error) bool {
 
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "sqlite_ioerr") ||
-		strings.Contains(msg, "disk i/o error")
+		strings.Contains(msg, "disk i/o error") ||
+		strings.Contains(msg, "requested sqlite vfs is unavailable") ||
+		strings.Contains(msg, "atomics.waitasync") ||
+		(strings.Contains(msg, "opfs") && strings.Contains(msg, "unavailable"))
 }
 
 func (s *wasmStore) verifySchema(ctx context.Context, conn *sql.Conn) error {
