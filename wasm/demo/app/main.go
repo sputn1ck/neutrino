@@ -79,6 +79,12 @@ func connect(_ js.Value, args []js.Value) any {
 	go func() {
 		status("connecting")
 		logf("requesting peer connection: %s", peer)
+		if isOnionTarget(peer) {
+			status("onion peer skipped")
+			log("onion peer skipped; browser demo only dials clearnet peers")
+			return
+		}
+
 		if err := ensureService(proxy); err != nil {
 			status("connect setup failed")
 			logf("connection setup could not complete: %v", err)
@@ -216,6 +222,10 @@ func ensureService(proxy string) error {
 		},
 		ChainParams: chaincfg.MainNetParams,
 		AddrResolver: func(addr string) (net.Addr, error) {
+			if isOnionTarget(addr) {
+				return nil, fmt.Errorf("onion peer skipped by browser demo")
+			}
+
 			return wasmtransport.NewAddr(addr), nil
 		},
 		Dialer: wasmtransport.NewProxyDialer(proxy),
@@ -316,6 +326,17 @@ func demoDBName() string {
 	}
 
 	return name
+}
+
+func isOnionTarget(target string) bool {
+	host := strings.TrimSpace(target)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	} else if idx := strings.LastIndex(host, ":"); idx > 0 {
+		host = host[:idx]
+	}
+
+	return strings.HasSuffix(strings.ToLower(strings.Trim(host, "[]")), ".onion")
 }
 
 func log(msg string) {

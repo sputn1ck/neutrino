@@ -51,3 +51,24 @@ test('reuses initialized storage when connecting a peer', async ({ page }) => {
   await expect(page.locator('#peerCount')).toBeVisible();
   await expect(page.locator('#log')).not.toContainText('database already open');
 });
+
+test('skips onion peers before opening websocket proxy connections', async ({ page }) => {
+  const messages = [];
+  page.on('console', (msg) => messages.push(msg.text()));
+
+  await page.goto('/');
+  await page.evaluate(() => {
+    window.neutrinoDemoDBName = `neutrino-wasm-test-${Date.now()}.sqlite`;
+  });
+  await expect(page.locator('#status')).toHaveText('ready', { timeout: 30000 });
+
+  await page.locator('#proxy').fill('ws://127.0.0.1:1/peer-proxy');
+  await page.locator('#peer').fill(
+    'hswvbdrouzbzzusp6s7onc4xgpydluxnjlylsfgmws66y6c2hradgiid.onion:8333'
+  );
+  await page.locator('#connectBtn').click();
+
+  await expect(page.locator('#status')).toHaveText('onion peer skipped');
+  await expect(page.locator('#log')).toContainText('onion peer skipped');
+  expect(messages.join('\n')).not.toContain('WebSocket connection');
+});
