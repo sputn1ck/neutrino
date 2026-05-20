@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	sqldbv2 "github.com/lightningnetwork/lnd/sqldb/v2"
@@ -18,6 +20,9 @@ import (
 
 type wasmStore struct {
 	*sqldbv2.BaseDB
+
+	busyTimeout int64
+	usingMemory bool
 }
 
 var _ sqldbv2.DB = (*wasmStore)(nil)
@@ -27,30 +32,24 @@ func openSQLStore(_ string, cfg *Config) (sqldbv2.DB, error) {
 		return nil, fmt.Errorf("sqldb: wasm only supports sqlite")
 	}
 
-	dsn := fmt.Sprintf(
-		"file=/%s?vfs=opfs&busy_timeout=%d&mode=rwc&parse_time=true",
-		cfg.sqliteFilename(), cfg.Sqlite.BusyTimeout.Milliseconds(),
-	)
+	busyTimeout := cfg.Sqlite.BusyTimeout.Milliseconds()
 	if cfg.Sqlite.BusyTimeout == 0 {
-		dsn = fmt.Sprintf(
-			"file=/%s?vfs=opfs&busy_timeout=%d&mode=rwc&parse_time=true",
-			cfg.sqliteFilename(), sqldbv2.DefaultSqliteBusyTimeout.Milliseconds(),
-		)
+		busyTimeout = sqldbv2.DefaultSqliteBusyTimeout.Milliseconds()
 	}
 
-	db, err := sql.Open("wasmsqlite", dsn)
+	db, err := openWasmSQLite(wasmSQLiteDSN(
+		"/"+cfg.sqliteFilename(), "opfs-wl", busyTimeout,
+	))
 	if err != nil {
 		return nil, fmt.Errorf("sqldb: open wasm sqlite: %w", err)
 	}
-
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
 
 	return &wasmStore{
 		BaseDB: &sqldbv2.BaseDB{
 			DB:          db,
 			BackendType: sqldbv2.BackendTypeSqlite,
 		},
+		busyTimeout: busyTimeout,
 	}, nil
 }
 
@@ -59,6 +58,29 @@ func (s *wasmStore) GetBaseDB() *sqldbv2.BaseDB {
 }
 
 func (s *wasmStore) ExecuteMigrations(set sqldbv2.MigrationSet) error {
+	if s.SkipMigrations {
+		return nil
+	}
+
+	err := s.executeMigrations(set)
+	if err == nil || s.usingMemory || !isWasmStorageFallbackError(err) {
+		return err
+	}
+
+	_ = s.DB.Close()
+	db, openErr := openWasmSQLite(wasmSQLiteDSN(
+		":memory:", "memory", s.busyTimeout,
+	))
+	if openErr != nil {
+		return fmt.Errorf("%w; memory fallback failed: %v", err, openErr)
+	}
+	s.DB = db
+	s.usingMemory = true
+
+	return s.executeMigrations(set)
+}
+
+func (s *wasmStore) executeMigrations(set sqldbv2.MigrationSet) error {
 	if s.SkipMigrations {
 		return nil
 	}
@@ -106,6 +128,39 @@ func (s *wasmStore) ExecuteMigrations(set sqldbv2.MigrationSet) error {
 	}
 
 	return s.verifySchema(ctx, conn)
+}
+
+func openWasmSQLite(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("wasmsqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	return db, nil
+}
+
+func wasmSQLiteDSN(file, vfs string, busyTimeout int64) string {
+	values := url.Values{}
+	values.Set("file", file)
+	values.Set("vfs", vfs)
+	values.Set("busy_timeout", strconv.FormatInt(busyTimeout, 10))
+	values.Set("mode", "rwc")
+	values.Set("parse_time", "true")
+
+	return values.Encode()
+}
+
+func isWasmStorageFallbackError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "sqlite_ioerr") ||
+		strings.Contains(msg, "disk i/o error")
 }
 
 func (s *wasmStore) verifySchema(ctx context.Context, conn *sql.Conn) error {

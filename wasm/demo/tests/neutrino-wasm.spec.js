@@ -11,11 +11,17 @@ test('loads wasm demo and initializes neutrino storage', async ({ page }) => {
   await expect(page.locator('#status')).toHaveText('ready', { timeout: 30000 });
   await expect(page.locator('#connectBtn')).toBeVisible();
   await expect(page.locator('#peerCount')).toHaveText('0');
+  await expect(page.locator('#storageMode')).toHaveText('opening');
 
   await page.locator('#initBtn').click();
   await expect(page.locator('#log')).toContainText('storage initialized', {
     timeout: 30000
   });
+  await expect(page.locator('#storageMode')).toHaveText(/OPFS Web Locks|memory fallback/, {
+    timeout: 30000
+  });
+  await expect(page.locator('#storageNote')).toContainText('requested opfs-wl');
+  await expect(page.locator('#log')).toContainText('sqlite storage mode:');
   await expect(page.locator('#log')).toContainText('best block height=0');
 
   await page.locator('#bestBtn').click();

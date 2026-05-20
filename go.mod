@@ -14,7 +14,7 @@ require (
 	github.com/lightninglabs/neutrino/cache v1.1.2
 	github.com/lightningnetwork/lnd/queue v1.0.1
 	github.com/lightningnetwork/lnd/sqldb/v2 v2.0.0-20260504151100-6fd5b7bb27d7
-	github.com/sputn1ck/go-wasmsqlite v0.0.0-20260520115614-9ea1167df60b
+	github.com/sputn1ck/go-wasmsqlite v0.0.0-20260520122810-fbcd82e32c84
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/exp v0.0.0-20250811191247-51f88131bc50
 	pgregory.net/rapid v1.2.0

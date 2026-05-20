@@ -178,6 +178,7 @@
       <div class="statusbar">
         <div id="status" class="status">loading</div>
         <div class="metric"><span>Connected peers</span><strong id="peerCount">0</strong></div>
+        <div class="metric"><span>SQLite VFS</span><strong id="storageMode">opening</strong></div>
       </div>
     </header>
 
@@ -209,6 +210,7 @@
         </div>
 
         <div class="hint">The proxy must accept binary WebSocket frames and forward raw TCP bytes to the target host:port.</div>
+        <div id="storageNote" class="hint">Storage mode will appear after Init DB.</div>
       </section>
 
       <section>
@@ -231,6 +233,8 @@
     const logEl = document.getElementById('log');
     const statusEl = document.getElementById('status');
     const peerCountEl = document.getElementById('peerCount');
+    const storageModeEl = document.getElementById('storageMode');
+    const storageNoteEl = document.getElementById('storageNote');
     const peerListEl = document.getElementById('peerList');
     const peerUpdatedEl = document.getElementById('peerUpdated');
     const buttons = [...document.querySelectorAll('button')];
@@ -253,6 +257,38 @@
       peerListEl.textContent = text || 'No connected peers.';
       peerUpdatedEl.textContent = new Date().toLocaleTimeString();
     };
+    window.neutrinoStorageInfo = (info = {}) => {
+      const vfs = info.vfsType || info.resolvedVFS || 'unknown';
+      const labels = {
+        'opfs-wl': 'OPFS Web Locks',
+        'opfs-sahpool': 'OPFS SAH pool',
+        opfs: 'OPFS',
+        memory: 'memory fallback',
+        unknown: 'unknown'
+      };
+      storageModeEl.textContent = labels[vfs] || vfs;
+      storageNoteEl.textContent = info.persistent
+        ? `SQLite requested opfs-wl and opened ${labels[vfs] || vfs}.`
+        : `SQLite requested opfs-wl and is using ${labels[vfs] || vfs}.`;
+      window.neutrinoLog(`sqlite storage mode: ${vfs}${info.persistent ? ' (persistent)' : ' (temporary)'}`);
+    };
+
+    if (window.sqliteBridge && typeof window.sqliteBridge.open === 'function') {
+      const originalSQLiteOpen = window.sqliteBridge.open.bind(window.sqliteBridge);
+      window.sqliteBridge.open = async (optionsOrFilename = {}, maybeVFS = 'opfs') => {
+        const requestedVFS = typeof optionsOrFilename === 'string'
+          ? maybeVFS
+          : (optionsOrFilename.vfs || 'auto');
+        window.neutrinoLog(`sqlite requested VFS: ${requestedVFS}`);
+        const result = await originalSQLiteOpen(optionsOrFilename, maybeVFS);
+        window.neutrinoStorageInfo({
+          requestedVFS,
+          vfsType: result.vfsType || result.resolvedVFS || 'unknown',
+          persistent: !!result.persistent
+        });
+        return result;
+      };
+    }
 
     function setReady(ready) {
       statusEl.textContent = ready ? 'ready' : 'loading';
