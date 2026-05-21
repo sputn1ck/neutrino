@@ -61,7 +61,13 @@ func (f *fileHeaderImportSource) Open() error {
 		return fmt.Errorf("failed to mmap file: %w", err)
 	}
 
-	f.file = newMmapFile(r)
+	return f.openImportHeadersFile(newMmapFile(r))
+}
+
+func (f *fileHeaderImportSource) openImportHeadersFile(
+	file ImportHeadersFile) error {
+
+	f.file = file
 	f.fileSize = f.file.Len()
 
 	mData, err := f.GetHeaderMetadata()

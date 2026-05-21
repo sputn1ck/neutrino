@@ -2,7 +2,6 @@ package chainimport
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 )
@@ -10,9 +9,10 @@ import (
 // httpHeaderImportSource implements headerImportSource for serving header files
 // over HTTP(s).
 type httpHeaderImportSource struct {
-	uri        string
-	httpClient HttpClient
-	file       HeaderImportSource
+	uri          string
+	httpClient   HttpClient
+	file         HeaderImportSource
+	tempFilePath string
 }
 
 // Compile-time assertion to ensure httpHeaderImportSource implements
@@ -43,30 +43,7 @@ func (h *httpHeaderImportSource) Open() error {
 			resp.StatusCode)
 	}
 
-	tempFile, err := os.CreateTemp("", "neutrino-headers-http-import-*.tmp")
-	if err != nil {
-		return err
-	}
-	cleanup := func() {
-		tempFile.Close()
-		os.Remove(tempFile.Name())
-	}
-
-	_, err = io.Copy(tempFile, resp.Body)
-	if err != nil {
-		cleanup()
-		return err
-	}
-
-	if err = tempFile.Sync(); err != nil {
-		cleanup()
-		return fmt.Errorf("failed to sync temporary file: %w", err)
-	}
-
-	tempFile.Close()
-
-	h.file.SetURI(tempFile.Name())
-	return h.file.Open()
+	return h.openBody(resp.Body)
 }
 
 // Close closes the HTTP header import source resources.
@@ -75,7 +52,11 @@ func (h *httpHeaderImportSource) Close() error {
 		return fmt.Errorf("failed to close file import source: %w", err)
 	}
 
-	if err := os.Remove(h.file.GetURI()); err != nil {
+	if h.tempFilePath == "" {
+		return nil
+	}
+
+	if err := os.Remove(h.tempFilePath); err != nil {
 		return fmt.Errorf("failed to remove temporary file: %w", err)
 	}
 
