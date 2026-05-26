@@ -145,3 +145,9 @@ are renamed to `*.bak`. The `walletdb` file is left in place; operators may
 delete it manually after confirming the SQL state. The migration is recorded
 exactly once in the `neutrino_migrations` tracking table at version 2; if the
 process crashes mid-import, the next start re-runs the import from scratch.
+
+### Browser WASM
+Browser WASM callers can use the SQL backend by supplying browser-safe dial,
+name-resolution, and address-resolution hooks in `neutrino.Config`. The
+`ll-wasm` integration repo owns those browser helpers and examples so this
+module only needs the storage and chain-service hooks.
