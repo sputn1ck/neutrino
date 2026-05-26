@@ -3,7 +3,6 @@ package sqldb
 import (
 	"database/sql"
 	"fmt"
-	"path/filepath"
 
 	"github.com/golang-migrate/migrate/v4"
 	sqldbv2 "github.com/lightningnetwork/lnd/sqldb/v2"
@@ -50,25 +49,9 @@ func NewBackend(dataDir string, cfg *Config,
 
 	migSet := MigrationSet(makeProgrammatic)
 
-	var store sqldbv2.DB
-	switch cfg.Backend {
-	case BackendSqlite:
-		dbPath := filepath.Join(dataDir, cfg.sqliteFilename())
-		s, err := sqldbv2.NewSqliteStore(cfg.Sqlite, dbPath)
-		if err != nil {
-			return nil, fmt.Errorf("sqldb: open sqlite: %w", err)
-		}
-		store = s
-
-	case BackendPostgres:
-		s, err := sqldbv2.NewPostgresStore(cfg.Postgres)
-		if err != nil {
-			return nil, fmt.Errorf("sqldb: open postgres: %w", err)
-		}
-		store = s
-
-	default:
-		return nil, fmt.Errorf("sqldb: unknown backend %d", cfg.Backend)
+	store, err := openSQLStore(dataDir, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := store.ExecuteMigrations(migSet); err != nil {
