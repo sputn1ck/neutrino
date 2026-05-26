@@ -51,7 +51,7 @@ var (
 
 	// UserAgentVersion is the user agent version and is used to help
 	// identify ourselves to other bitcoin peers.
-	UserAgentVersion = "0.12.0-beta"
+	UserAgentVersion = "0.16.2"
 
 	// Services describes the services that are supported by the server.
 	Services = wire.SFNodeWitness | wire.SFNodeCF
@@ -598,6 +598,12 @@ type Config struct {
 	// instead.
 	NameResolver func(host string) ([]net.IP, error)
 
+	// AddrResolver is an optional function closure that turns a user
+	// supplied peer address into a net.Addr. This is useful for transports
+	// that need to preserve the original host name, such as browser
+	// WebSocket proxy dialers.
+	AddrResolver func(addr string) (net.Addr, error)
+
 	// FilterCacheSize indicates the size (in bytes) of filters the cache will
 	// hold in memory at most.
 	FilterCacheSize uint64
@@ -735,6 +741,7 @@ type ChainService struct { // nolint:maligned
 
 	nameResolver func(string) ([]net.IP, error)
 	dialer       func(net.Addr) (net.Conn, error)
+	addrResolver func(string) (net.Addr, error)
 
 	broadcastTimeout time.Duration
 }
@@ -806,6 +813,7 @@ func NewChainService(cfg Config) (*ChainService, error) {
 		userAgentVersion:  UserAgentVersion,
 		nameResolver:      nameResolver,
 		dialer:            dialer,
+		addrResolver:      cfg.AddrResolver,
 		persistToDisk:     cfg.PersistToDisk,
 		broadcastTimeout:  cfg.BroadcastTimeout,
 		headersImport:     cfg.HeadersImport,
@@ -1350,6 +1358,10 @@ cleanup:
 // names resolved to IP addresses and a default port added, if not specified,
 // from the ChainService's network parameters.
 func (s *ChainService) addrStringToNetAddr(addr string) (net.Addr, error) {
+	if s.addrResolver != nil {
+		return s.addrResolver(addr)
+	}
+
 	host, strPort, err := net.SplitHostPort(addr)
 	if err != nil {
 		switch err.(type) {
@@ -1747,6 +1759,17 @@ func (s *ChainService) Start(ctx context.Context) error {
 		}
 		if _, err := importer.Import(ctx); err != nil {
 			return err
+		}
+
+		// The block manager was constructed before the import ran,
+		// so its internal header tracking state (headerList,
+		// headerTip, filterHeaderTip, etc.) reflects the
+		// pre-import chain tips. Re-read the now-updated stores
+		// so the block manager starts syncing from the correct
+		// height rather than from genesis.
+		if err := s.blockManager.ResetHeaderState(); err != nil {
+			return fmt.Errorf("failed to reset block manager "+
+				"state after headers import: %w", err)
 		}
 	}
 
