@@ -44,6 +44,10 @@ type Config struct {
 	// PostgreSQL backend.
 	SqliteFilename string
 
+	// WasmSQLiteVFS overrides the SQLite VFS used by the js/wasm backend.
+	// Empty uses the browser default.
+	WasmSQLiteVFS string
+
 	// SkipLegacyMigration disables the one-shot programmatic migration
 	// from the legacy walletdb + flat-file state into the SQL backend.
 	// Useful for tests and for callers that have already migrated.

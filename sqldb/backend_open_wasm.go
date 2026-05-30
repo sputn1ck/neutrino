@@ -37,9 +37,8 @@ func openSQLStore(_ string, cfg *Config) (sqldbv2.DB, error) {
 		busyTimeout = sqldbv2.DefaultSqliteBusyTimeout.Milliseconds()
 	}
 
-	db, err := openWasmSQLite(wasmSQLiteDSN(
-		"/"+cfg.sqliteFilename(), "opfs-wl", busyTimeout,
-	))
+	fileName, vfs := wasmSQLiteStorage(cfg)
+	db, err := openWasmSQLite(wasmSQLiteDSN(fileName, vfs, busyTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("sqldb: open wasm sqlite: %w", err)
 	}
@@ -50,6 +49,7 @@ func openSQLStore(_ string, cfg *Config) (sqldbv2.DB, error) {
 			BackendType: sqldbv2.BackendTypeSqlite,
 		},
 		busyTimeout: busyTimeout,
+		usingMemory: vfs == "memory",
 	}, nil
 }
 
@@ -151,6 +151,18 @@ func wasmSQLiteDSN(file, vfs string, busyTimeout int64) string {
 	values.Set("parse_time", "true")
 
 	return values.Encode()
+}
+
+func wasmSQLiteStorage(cfg *Config) (string, string) {
+	vfs := strings.TrimSpace(cfg.WasmSQLiteVFS)
+	if vfs == "" {
+		vfs = "opfs-wl"
+	}
+	if vfs == "memory" {
+		return ":memory:", "memory"
+	}
+
+	return "/" + cfg.sqliteFilename(), vfs
 }
 
 func isWasmStorageFallbackError(err error) bool {
